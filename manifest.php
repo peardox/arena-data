@@ -8,10 +8,27 @@
 
 set_time_limit(0);
 
+$memory_required = 64; // Largest file is currently 14M so give this thing more
 $time_start = microtime_float(); // Function defined below
 $download_historical_data = false; // Do we download old data?
 
 echo "<pre>\n";
+
+$memory_limit = ini_get('memory_limit');
+if (preg_match('/^(\d+)(.)$/', $memory_limit, $matches)) {
+    if ($matches[2] == 'M') {
+        $memory_limit = $matches[1] * 1024 * 1024; // nnnM -> nnn MB
+    } else if ($matches[2] == 'K') {
+        $memory_limit = $matches[1] * 1024; // nnnK -> nnn KB
+    }
+}
+
+$memory_ok = ($memory_limit >= $memory_required * 1024 * 1024); // at least 64M?
+
+if(!$memory_ok) {
+    die("This uses a lot of memory, please update php.ini setting memory_limit = " . $memory_required . "M\n");
+}
+
 
 define("ARENA_LATEST_URI", "https://mtgarena.downloads.wizards.com/Live/Windows32/version");
 define("ARENA_ASSETS_URI", "https://assets.mtgarena.wizards.com/");
@@ -328,6 +345,8 @@ if($download_historical_data) {
 }
 
 $latestHash = get_arena_latest_hash();
+
+echo "latestHash = $latestHash\n\n";
 
 if(check_latest_hash($latestHash)) {
     echo "New update found, downloading...\n";
