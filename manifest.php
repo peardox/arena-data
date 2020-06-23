@@ -5,7 +5,7 @@
  needs to be created prior to running this script and 
  must be web server writable!
  ******************************************************/
-
+header('Content-type: text/html; charset=utf-8');
 set_time_limit(0);
 
 $memory_required = 64; // Largest file is currently 14M so give this thing more
@@ -54,7 +54,8 @@ $manifestList = array(
     '48ee6074c8e4761fda9ff44924e8bf5a', //  [20200210]
     'a63b36c32677b204a26063a4152302dd', //  [20200211]
     '23813b76a26fe593f0b1351cbcd2c08e', //  [20200309]
-    'dbfd888e5501f52006511cf76c17ec81'  //  [20200324]
+    'dbfd888e5501f52006511cf76c17ec81', //  [20200324]
+    '7fd124f5f46cf63828c7319cd7ca170c'  //  [20200331]
     );
     
 function microtime_float() {
@@ -107,8 +108,9 @@ function get_arena_latest_hash() {
                 if(count($versionParts) === 4) {
                     // Construct the UTI to obtain the manifest hash
                     $manifestHashURI = ARENA_ASSETS_URI . '/External_' . $versionParts[2] . '_' . $versionParts[3] . ARENA_ASSETS_EXT;
+                    echo "Manifest Hash : $manifestHashURI\n";
                     if(($data = @file_get_contents($manifestHashURI)) !== FALSE) {
-                        // Read the manifest hash
+                        // Read the manifest hash(es) - at release there may be multiple
                         $rval = $data;
                     } else {
                         die("Can't read Arena latest version hash from $manifestHashURI\n");
@@ -153,6 +155,7 @@ function get_arena_latest() {
 function get_arena_manifest($manifest) {
     // Build Arena manifest URI
     $manifestFile = 'Manifest_' . $manifest . ARENA_ASSETS_EXT;
+    echo "manifestFile = " . ARENA_ASSETS_URI . "$manifestFile\n";
     // Default to a return value of false, this will only be changed if manifest is valid
     $rval = false;
     
@@ -220,33 +223,13 @@ function save_arena_data_file($manifestInfo, $cacheDir, $masterHash) {
     $opts = array('http'=>array('method'=>"GET"));
     $context = stream_context_create($opts);
     
+    echo "Getting " . ARENA_ASSETS_URI . $dataFile . "\n";
+    
     // Try to read data from data file
     if(($data = @file_get_contents(ARENA_ASSETS_URI . $dataFile, false, $context)) !== FALSE) {
         // Decompress the data
         $arenaData = gzdecode($data);
-
-/*******************************************************
-/* Hash problems so removed this bit for now.          *
- *                                                     *
- * For the main manifest the hash is the MD5 of the    *
- * original data. This test fails here but everything  *
- * looks fine and the filesizes match.                 *
- *******************************************************/
-
-/*
-        // Take the MD5 of the decompressed data
-        $hash = md5($arenaData);
-        // hash should equal the supplied value
-        if($manifestInfo->Hash !== $hash) {
-            echo "manifest : ";
-            print_r($manifestInfo);
-            echo "strlen(\$data) : " . strlen($data) . "\n";
-            echo "strlen(\$arenaData) : " . strlen($arenaData) . "\n";
-            echo "data hash : " . md5($data) . "\n";
-            echo "decompressed data hash : $hash\n";
-            die("Hash fail\n" . $manifestInfo->Hash . " != $hash\n");
-        }
-*/
+        
         if(($dataJSON = json_decode($arenaData)) !== NULL) {
             // Return the date and data as an array
             $dataDir = $cacheDir . DIRECTORY_SLASH . $manifestInfo->AssetType;
@@ -260,10 +243,25 @@ function save_arena_data_file($manifestInfo, $cacheDir, $masterHash) {
             $dataFile = $dataDir . DIRECTORY_SLASH . $dataFile;
             if(file_put_contents($dataFile, $arenaData) === false) {
                 die("Can't write data file to $dataFile\n");
+            } else {
+                echo "Wrote JSON to " . ARENA_ASSETS_URI . $dataFile . "\n";
             }
         } else {
-            print_r($data);
-            die("Can't decode data JSON from $dataFile\n");
+            // Return the date and data as an array
+            $dataDir = $cacheDir . DIRECTORY_SLASH . $manifestInfo->AssetType;
+            $rval = $arenaData;
+            // save data to {LOCAL_CACHE_BASE}/{manifestDate}/{AssetType}/{dataFile}
+            if(!file_exists($dataDir)) {
+                if(!mkdir($dataDir, LOCAL_CACHE_MASK)) {
+                    die("Can't create data directory $dataDir\n");
+                }
+            }
+            $dataFile = $dataDir . DIRECTORY_SLASH . $dataFile . '.corrupted';
+            if(file_put_contents($dataFile, $arenaData) === false) {
+                die("Can't write data file to $dataFile\n");
+            } else {
+                echo "Wrote corrupted JSON to " . ARENA_ASSETS_URI . $dataFile  . '.corrupted' . "\n";
+            }
         }
     } else {
         die("Can't read Arena data file from $dataFile\n");
@@ -288,7 +286,6 @@ function arena_download($hash) {
         for($i=0; $i<count($manifest['data']->Assets); $i++) {
             // For our purposes we're only interested in objects with an AssetType of Data or Loc
             if($manifest['data']->Assets[$i]->AssetType === 'Data' ||  $manifest['data']->Assets[$i]->AssetType === 'Loc') {
-                // Save the data file(s)
                 save_arena_data_file($manifest['data']->Assets[$i], $manifest['cache'], $hash);
             }
         }
@@ -345,6 +342,16 @@ if($download_historical_data) {
 }
 
 $latestHash = get_arena_latest_hash();
+
+if($newHash = explode("\n", $latestHash)) {
+    if(count($newHash) > 1) {
+        for($i=0; $i<count($newHash);$i++) {
+            echo "Hash $i = " . $newHash[$i] . "\n";
+        }
+        $latestHash = trim($newHash[count($newHash) - 1]);
+//        arena_download($latestHash);
+    }
+}
 
 echo "latestHash = $latestHash\n\n";
 
